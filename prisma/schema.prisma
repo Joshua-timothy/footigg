@@ -1,0 +1,230 @@
+// FOOTIGG — Prisma schema for Supabase Free (Postgres 15)
+//
+// Connection notes:
+//  • DATABASE_URL → Supabase transaction pooler (port 6543) + ?pgbouncer=true
+//  • DIRECT_URL   → Supabase session/direct connection (port 5432) for migrations
+//
+// Storage budget: ~500 MB free. A full season of 10 competitions is roughly
+// 4,000 matches (~2 MB), so we keep several seasons plus predictions and still
+// use a fraction of the quota. Cache rows are pruned by the sync job.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// Competition codes mirror football-data.org (PL, PD, SA, BL1, FL1, ELC, DED, PPL, BSA, CL).
+model Competition {
+  code      String  @id
+  name      String
+  shortName String
+  country   String?
+  emblem    String?
+  /// Start year of the season currently tracked (e.g. 2025 for 2025/26).
+  season    Int?
+  sortOrder Int     @default(100)
+  isTracked Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  teams   CompetitionTeam[]
+  matches Match[]
+
+  @@index([isTracked, sortOrder])
+}
+
+model Team {
+  id        Int     @id
+  name      String
+  shortName String
+  tla       String?
+  crest     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  competitions CompetitionTeam[]
+  homeMatches  Match[]           @relation("HomeTeam")
+  awayMatches  Match[]           @relation("AwayTeam")
+}
+
+/// Which teams belong to which competition in a given season.
+model CompetitionTeam {
+  competitionCode String
+  teamId          Int
+  season          Int
+
+  competition Competition @relation(fields: [competitionCode], references: [code], onDelete: Cascade)
+  team        Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([competitionCode, teamId, season])
+  @@index([teamId])
+}
+
+model Match {
+  id              Int         @id
+  competitionCode String
+  season          Int
+  matchday        Int?
+  stage           String?
+  group           String?
+  kickoff         DateTime
+  status          MatchStatus
+
+  homeTeamId Int
+  awayTeamId Int
+
+  homeGoals   Int?
+  awayGoals   Int?
+  htHomeGoals Int?
+  htAwayGoals Int?
+  winner      Winner?
+  /// Both teams scored. Null until the match is finished.
+  btts        Boolean?
+  totalGoals  Int?
+
+  lastSyncedAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  competition Competition @relation(fields: [competitionCode], references: [code], onDelete: Cascade)
+  homeTeam    Team        @relation("HomeTeam", fields: [homeTeamId], references: [id], onDelete: Cascade)
+  awayTeam    Team        @relation("AwayTeam", fields: [awayTeamId], references: [id], onDelete: Cascade)
+  prediction  Prediction?
+
+  @@index([competitionCode, kickoff])
+  @@index([kickoff])
+  @@index([status, kickoff])
+  @@index([homeTeamId, kickoff])
+  @@index([awayTeamId, kickoff])
+  @@index([season, competitionCode])
+}
+
+/// A frozen, auditable prediction. `inputs` stores the exact numbers the engine
+/// used, so a past pick can always be re-explained even after the model changes.
+model Prediction {
+  id             String     @id @default(cuid())
+  matchId        Int        @unique
+  modelVersion   String
+  probabilityYes Float
+  probabilityNo  Float
+  pick           PickSide
+  conviction     Conviction
+  confidence     Float
+  lambdaHome     Float
+  lambdaAway     Float
+  expectedTotal  Float
+
+  /// PredictionFactor[] — ablation-based explanations.
+  factors      Json
+  /// Markets + top scorelines derived from the score matrix.
+  markets      Json
+  /// Full input snapshot (ratings, baselines, form, h2h).
+  inputs       Json
+  /// DataQuality object.
+  dataQuality  Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  resolvedAt  DateTime?
+  actualBtts  Boolean?
+  correct     Boolean?
+  brier       Float?
+  logLoss     Float?
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@index([modelVersion, resolvedAt])
+  @@index([resolvedAt])
+  @@index([createdAt])
+}
+
+/// Generic response cache. Used for slow-changing payloads (competition metadata).
+model ApiCache {
+  key       String   @id
+  payload   Json
+  fetchedAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+/// Rolling API budget ledger — enforces the free plan's 10 requests/minute.
+model ApiRequest {
+  id         String   @id @default(cuid())
+  endpoint   String
+  statusCode Int
+  durationMs Int
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model SyncRun {
+  id          String     @id @default(cuid())
+  trigger     String
+  status      SyncStatus
+  startedAt   DateTime   @default(now())
+  finishedAt  DateTime?
+  matchesSeen Int        @default(0)
+  matchesSaved Int       @default(0)
+  predictions Int        @default(0)
+  resolved    Int        @default(0)
+  requests    Int        @default(0)
+  error       String?
+  detail      Json?
+
+  @@index([startedAt])
+}
+
+/// Single-row advisory lock table so only one serverless instance syncs at a time.
+model SyncLock {
+  id         String   @id
+  owner      String
+  acquiredAt DateTime @default(now())
+  expiresAt  DateTime
+}
+
+enum MatchStatus {
+  SCHEDULED
+  TIMED
+  IN_PLAY
+  PAUSED
+  FINISHED
+  SUSPENDED
+  POSTPONED
+  CANCELLED
+  AWARDED
+}
+
+enum Winner {
+  HOME_TEAM
+  AWAY_TEAM
+  DRAW
+}
+
+enum PickSide {
+  YES
+  NO
+}
+
+enum Conviction {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum SyncStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+  SKIPPED
+}

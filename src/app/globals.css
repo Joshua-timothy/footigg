@@ -1,0 +1,135 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 155 12% 4%;
+    --foreground: 150 8% 96%;
+
+    --card: 155 10% 6.5%;
+    --card-foreground: 150 8% 96%;
+
+    --popover: 155 10% 7%;
+    --popover-foreground: 150 8% 96%;
+
+    --primary: 158 64% 50%;
+    --primary-foreground: 160 45% 6%;
+
+    --secondary: 155 8% 12%;
+    --secondary-foreground: 150 8% 92%;
+
+    --muted: 155 7% 11%;
+    --muted-foreground: 150 5% 62%;
+
+    --accent: 155 8% 14%;
+    --accent-foreground: 150 8% 96%;
+
+    --destructive: 350 72% 58%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 155 8% 15%;
+    --input: 155 8% 17%;
+    --ring: 158 64% 50%;
+
+    --yes: 158 64% 50%;
+    --no: 350 72% 60%;
+    --neutral: 150 5% 55%;
+
+    --radius: 0.8rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background-image:
+      radial-gradient(1000px 520px at 50% -12%, hsl(158 64% 50% / 0.12), transparent 70%),
+      radial-gradient(700px 420px at 100% -5%, hsl(190 80% 55% / 0.05), transparent 70%);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.28);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 999px;
+    border: 2px solid hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(155 8% 24%);
+  }
+}
+
+@layer components {
+  .panel {
+    @apply relative overflow-hidden rounded-xl border border-white/[0.06] bg-card/80 shadow-card;
+  }
+
+  .panel-sheen::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: linear-gradient(180deg, hsl(0 0% 100% / 0.035), transparent 42%);
+  }
+
+  .label-caps {
+    @apply text-2xs font-medium uppercase tracking-[0.16em] text-muted-foreground;
+  }
+
+  .focus-ring {
+    @apply outline-none ring-offset-2 ring-offset-background focus-visible:ring-2 focus-visible:ring-ring;
+  }
+}
+
+@layer utilities {
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  .text-glow {
+    text-shadow: 0 0 28px hsl(var(--primary) / 0.35);
+  }
+
+  .text-glow-no {
+    text-shadow: 0 0 28px hsl(var(--no) / 0.3);
+  }
+
+  .grid-lines {
+    background-image:
+      linear-gradient(to right, hsl(0 0% 100% / 0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(0 0% 100% / 0.03) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  .mask-fade-b {
+    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
