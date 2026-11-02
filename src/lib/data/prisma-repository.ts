@@ -12,6 +12,7 @@ import {
 } from "@/lib/prediction";
 import { PredictionFactory } from "@/lib/data/prediction-factory";
 import { hydratePrediction, toMatchRecord, toPredictionCreate } from "@/lib/data/mappers";
+import type { StoredPredictionInputs } from "@/lib/data/mappers";
 import { applyFilters, statsFor, type FootballRepository } from "@/lib/data/repository";
 import { buildLeagueOverviews } from "@/lib/data/overview";
 import type {
@@ -24,6 +25,7 @@ import type {
   LeagueOverview,
   MatchDetail,
   PerformanceReport,
+  Prediction,
   ResolvedPrediction,
   SyncRunSummary,
   SyncStatus,
@@ -226,16 +228,34 @@ export class PrismaRepository implements FootballRepository {
       competitionMap.get(match.competitionCode) ?? COMPETITION_BY_CODE[match.competitionCode];
     const h2h = factory.h2hFor(match);
 
-    let prediction = stored
-      ? hydratePrediction(
+    let prediction: Prediction | null = null;
+
+    if (stored) {
+      // A row written by an older model build can miss the frozen inputs the
+      // page renders. Degrade to a live preview (or no pick) instead of
+      // failing the whole route.
+      const inputs = stored.inputs as unknown as Partial<StoredPredictionInputs> | null;
+      const complete =
+        typeof inputs === "object" &&
+        inputs !== null &&
+        Boolean(inputs.explanation) &&
+        Array.isArray(inputs.scorelines) &&
+        Boolean(inputs.baseline) &&
+        Boolean(inputs.ratings);
+
+      if (complete) {
+        prediction = hydratePrediction(
           stored,
           {
             home: factory.formFor(match.homeTeam.id, match.homeTeam.shortName),
             away: factory.formFor(match.awayTeam.id, match.awayTeam.shortName),
           },
           h2h,
-        )
-      : null;
+        );
+      } else {
+        console.warn("[repository] stored prediction is missing frozen inputs", { matchId: id });
+      }
+    }
 
     // Upcoming fixture without a stored row: show a live preview. Persistence
     // belongs to the sync job, never to a page render.

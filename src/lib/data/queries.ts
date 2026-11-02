@@ -7,39 +7,47 @@ import type { Board, BoardFilters } from "@/types/domain";
 const isDev = process.env.NODE_ENV === "development";
 
 /**
+ * Bump this whenever the shape of a cached value changes (or when a bad entry
+ * needs to be flushed). Next's `unstable_cache` keeps serving the previous entry
+ * while it revalidates in the background, so an entry written by an older build
+ * can outlive a deploy and fail to deserialize in the new one. Including a
+ * version in `keyParts` makes the new build read a fresh key instead.
+ */
+const CACHE_VERSION = "v2";
+
+/**
  * Data access with a second cache layer on top of Postgres.
  *
  * Vercel Hobby only allows a daily cron, so the app stays inside the free
  * football-data.org budget by (a) syncing lazily every 30 minutes and
  * (b) caching rendered data for 15 minutes.
+ *
+ * Match details are deliberately *not* cached: each one is a single fixture,
+ * costs three indexed queries, and is only reachable from a page that is
+ * already dynamic. Caching them bought nothing but a way for stale shapes to
+ * break a page after a deploy.
  */
 const cachedBoard = unstable_cache(
   async (filters: BoardFilters) => getRepository().getBoard(filters),
-  ["board"],
-  { revalidate: SYNC.revalidateSeconds, tags: ["board"] },
-);
-
-const cachedMatch = unstable_cache(
-  async (id: number) => getRepository().getMatchDetail(id),
-  ["match"],
+  [`${CACHE_VERSION}:board`],
   { revalidate: SYNC.revalidateSeconds, tags: ["board"] },
 );
 
 const cachedPerformance = unstable_cache(
   async () => getRepository().getPerformance(),
-  ["performance"],
+  [`${CACHE_VERSION}:performance`],
   { revalidate: SYNC.revalidateSeconds, tags: ["board"] },
 );
 
 const cachedLeagues = unstable_cache(
   async () => getRepository().getLeagueOverview(),
-  ["leagues"],
+  [`${CACHE_VERSION}:leagues`],
   { revalidate: SYNC.revalidateSeconds, tags: ["board"] },
 );
 
 const cachedStatus = unstable_cache(
   async () => getRepository().getSyncStatus(),
-  ["sync-status"],
+  [`${CACHE_VERSION}:sync-status`],
   { revalidate: 60, tags: ["board"] },
 );
 
@@ -48,7 +56,7 @@ export async function getBoardData(filters: BoardFilters): Promise<Board> {
 }
 
 export async function getMatchData(id: number) {
-  return isDev ? getRepository().getMatchDetail(id) : cachedMatch(id);
+  return getRepository().getMatchDetail(id);
 }
 
 export async function getPerformanceData() {
